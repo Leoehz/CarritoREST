@@ -29,7 +29,11 @@ def encontrar_producto(producto_id: str):
 def crear_carrito(carrito_data: CarritoCreate):
     """
     Crea un nuevo carrito de compra para un usuario.
+    No permite crear más de un carrito simultáneo por usuario.
     """
+    for carrito in carritos_db:
+        if carrito["user_id"] == carrito_data.user_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Ya existe un carrito para este usuario")
     nuevo_carrito = {
         "id": str(uuid.uuid4()),
         "user_id": carrito_data.user_id,
