@@ -77,7 +77,7 @@ def sobreescribir_carrito(carrito_id: str, nuevos_items: List[ItemCarritoBase]):
         if not encontrar_producto(item.producto_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Producto con ID {item.producto_id} no encontrado")
 
-    carrito["items"] = [item.dict() for item in nuevos_items]
+    carrito["items"] = [item.model_dump() for item in nuevos_items]
     return carrito
 
 
