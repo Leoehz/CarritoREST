@@ -67,15 +67,19 @@ def eliminar_carrito(carrito_id: str):
 def sobreescribir_carrito(carrito_id: str, nuevos_items: List[ItemCarritoBase]):
     """
     Sobreescribe completamente la lista de productos de un carrito.
+    Valida que no se exceda el stock disponible para ningún producto.
     """
     carrito = encontrar_carrito(carrito_id)
     if not carrito:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Carrito no encontrado")
 
-    # Validar que todos los productos existen
+    # Validar que todos los productos existen y que no se excede el stock
     for item in nuevos_items:
-        if not encontrar_producto(item.producto_id):
+        producto = encontrar_producto(item.producto_id)
+        if not producto:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Producto con ID {item.producto_id} no encontrado")
+        if item.cantidad > producto["stock"]:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Stock insuficiente para el producto: {producto['nombre']}. Stock disponible: {producto['stock']}")
 
     carrito["items"] = [item.model_dump() for item in nuevos_items]
     return carrito
@@ -85,25 +89,50 @@ def sobreescribir_carrito(carrito_id: str, nuevos_items: List[ItemCarritoBase]):
 def agregar_productos_al_carrito(carrito_id: str, items_a_agregar: List[ItemCarritoBase]):
     """
     Agrega una lista de productos a un carrito existente. Si un producto ya existe, actualiza la cantidad.
+    Fraudes:
+        -No puede haber un carrito con una lista de más de 15 ítems (sumando cantidades).
+        -No puede haber más de 10 unidades de un mismo producto (sumando todas las tuplas con ese producto_id).
     """
     carrito = encontrar_carrito(carrito_id)
     if not carrito:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Carrito no encontrado")
 
+    # Validar existencia de productos
     for item_nuevo in items_a_agregar:
-        # Validar que el producto existe en la DB
         if not encontrar_producto(item_nuevo.producto_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Producto con ID {item_nuevo.producto_id} no encontrado")
 
-        item_existente = next((item for item in carrito["items"] if item["producto_id"] == item_nuevo.producto_id), None)
-        
-        if item_existente:
-            # Si el producto ya está en el carrito, suma la cantidad
-            item_existente["cantidad"] += item_nuevo.cantidad
+    # Agrupar cantidades por producto (sumando lo que ya hay en el carrito y lo nuevo)
+    cantidades_por_producto = {}
+    for item in carrito["items"]:
+        pid = item["producto_id"]
+        cantidades_por_producto[pid] = cantidades_por_producto.get(pid, 0) + item["cantidad"]
+    for item_nuevo in items_a_agregar:
+        pid = item_nuevo.producto_id
+        cantidades_por_producto[pid] = cantidades_por_producto.get(pid, 0) + item_nuevo.cantidad
+
+    # Validar máximo 15 ítems en total
+    total_cantidades = sum(cantidades_por_producto.values())
+    if total_cantidades > 15:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No puede haber más de 15 ítems en el carrito")
+
+    # Validar máximo 10 unidades por producto
+    for pid, total in cantidades_por_producto.items():
+        if total > 10:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"No puede haber más de 10 unidades del producto {pid} en el carrito")
+
+    # Actualizar el carrito agrupando por producto
+    # Primero, crear un dict de items actuales
+    items_dict = {item["producto_id"]: item for item in carrito["items"]}
+    for item_nuevo in items_a_agregar:
+        pid = item_nuevo.producto_id
+        if pid in items_dict:
+            items_dict[pid]["cantidad"] += item_nuevo.cantidad
         else:
-            # Si es un producto nuevo, lo agrega a la lista
-            carrito["items"].append(item_nuevo.model_dump())
-            
+            items_dict[pid] = item_nuevo.model_dump()
+    # Actualizar la lista de items del carrito
+    carrito["items"] = list(items_dict.values())
+
     return carrito
 
 
