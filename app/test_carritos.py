@@ -113,6 +113,28 @@ def test_agregar_productos_al_carrito():
     assert cantidades[100] == 5
     assert cantidades[200] == 1
 
+def test_no_se_puede_superar_limite_15_items():
+    from app.db.database import productos_db
+    productos_db.clear()
+    productos_db.append({"id": 101, "nombre": "ProdA", "precio": 10.0, "stock": 100})
+    productos_db.append({"id": 102, "nombre": "ProdB", "precio": 20.0, "stock": 100})
+
+    # Crear carrito
+    response = client.post("/carritos", json={"user_id": "user_limite"})
+    assert response.status_code == 201
+    carrito_id = response.json()["id"]
+
+    # Agregar 10 del producto A
+    patch_response1 = client.patch(f"/carritos/{carrito_id}", json=[{"producto_id": 101, "cantidad": 10}])
+    assert patch_response1.status_code == 200
+    assert patch_response1.json()["items"][0]["cantidad"] == 10
+
+    # Intentar agregar 6 del producto B (total sería 16)
+    patch_response2 = client.patch(f"/carritos/{carrito_id}", json=[{"producto_id": 102, "cantidad": 6}])
+    assert patch_response2.status_code == 400
+    assert "No puede haber más de 15 ítems" in patch_response2.json()["detail"]
+
+
 #PAGO
 def test_stock_decrementa_correctamente_tras_pago():
     # Setup: producto con stock 10
@@ -157,3 +179,18 @@ def test_sobreescribir_items_carrito():
     assert len(items) == 1
     assert items[0]["producto_id"] == 20
     assert items[0]["cantidad"] == 3
+
+def test_sobreescribir_items_con_mas_unidades_que_stock():
+    from app.db.database import productos_db
+    productos_db.clear()
+    productos_db.append({"id": 30, "nombre": "ProdStockPUT", "precio": 50.0, "stock": 4})
+
+    # Crear carrito
+    response = client.post("/carritos", json={"user_id": "user_put_stock"})
+    assert response.status_code == 201
+    carrito_id = response.json()["id"]
+
+    # Intentar sobreescribir con 6 unidades (stock es 4)
+    put_response = client.put(f"/carritos/{carrito_id}", json=[{"producto_id": 30, "cantidad": 6}])
+    assert put_response.status_code == 409
+    assert "stock" in put_response.json()["detail"].lower() or "Stock" in put_response.json()["detail"]
