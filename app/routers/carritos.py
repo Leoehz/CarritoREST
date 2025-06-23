@@ -102,7 +102,7 @@ def agregar_productos_al_carrito(carrito_id: str, items_a_agregar: List[ItemCarr
             item_existente["cantidad"] += item_nuevo.cantidad
         else:
             # Si es un producto nuevo, lo agrega a la lista
-            carrito["items"].append(item_nuevo.dict())
+            carrito["items"].append(item_nuevo.model_dump())
             
     return carrito
 
