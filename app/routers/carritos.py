@@ -3,25 +3,15 @@ from fastapi import APIRouter, HTTPException, status
 from typing import List
 import uuid
 
+# Traemos las funciones auxiliares
+from app.utils import timestamp_utc, carrito_inactivo, encontrar_carrito, encontrar_producto
+
 # Importaciones locales
-from app.db.database import carritos_db, productos_db
+from app.db.database import carritos_db
 from app.schemas.carrito import Carrito, CarritoCreate, ItemCarritoBase
 from app.schemas.producto import ProductoEnCarrito
 
 router = APIRouter()
-
-# --- Funciones de ayuda ---
-def encontrar_carrito(carrito_id: str):
-    for carrito in carritos_db:
-        if carrito["id"] == carrito_id:
-            return carrito
-    return None
-
-def encontrar_producto(producto_id: str):
-    for producto in productos_db:
-        if producto["id"] == producto_id:
-            return producto
-    return None
 
 # --- Endpoints ---
 
@@ -37,19 +27,38 @@ def crear_carrito(carrito_data: CarritoCreate):
     nuevo_carrito = {
         "id": str(uuid.uuid4()),
         "user_id": carrito_data.user_id,
-        "items": []
+        "items": [],
+        "creado_en": timestamp_utc(),
+        "actualizado_en": timestamp_utc()
     }
     carritos_db.append(nuevo_carrito)
     return nuevo_carrito
+
+@router.get("/carritos", response_model=List, tags=["Carritos"])
+def get_carritos():
+    """
+    Devuelve los carritos de compra activos.
+    """
+    if len(carritos_db) == 0:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No hay carritos activos")
+    
+    return carritos_db
+
 
 @router.get("/carritos/{carrito_id}", response_model=Carrito, tags=["Carritos"])
 def get_carrito(carrito_id: str):
     """
     Devuelve un carrito de compra específico por su ID.
+    Si el carrito tiene más de 1 minuto de inactividad, se elimina automáticamente.
     """
     carrito = encontrar_carrito(carrito_id)
     if not carrito:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Carrito no encontrado")
+    
+    if carrito_inactivo(carrito, carrito["actualizado_en"].minute):
+        carritos_db.remove(carrito)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Carrito eliminado por inactividad")
+    
     return carrito
 
 @router.delete("/carritos/{carrito_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Carritos"])
@@ -112,8 +121,8 @@ def agregar_productos_al_carrito(carrito_id: str, items_a_agregar: List[ItemCarr
         cantidades_por_producto[pid] = cantidades_por_producto.get(pid, 0) + item_nuevo.cantidad
 
     # Validar máximo 15 ítems en total
-    total_cantidades = sum(cantidades_por_producto.values())
-    if total_cantidades > 15:
+    total_productos_en_carrito = sum(cantidades_por_producto.values())
+    if total_productos_en_carrito > 15:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No puede haber más de 15 ítems en el carrito")
 
     # Validar máximo 10 unidades por producto
@@ -132,6 +141,8 @@ def agregar_productos_al_carrito(carrito_id: str, items_a_agregar: List[ItemCarr
             items_dict[pid] = item_nuevo.model_dump()
     # Actualizar la lista de items del carrito
     carrito["items"] = list(items_dict.values())
+    # Actualizar la hora de modificacion del carrito
+    carrito["actualizado_en"] = timestamp_utc()
 
     return carrito
 
@@ -140,6 +151,7 @@ def agregar_productos_al_carrito(carrito_id: str, items_a_agregar: List[ItemCarr
 def pagar_carrito(carrito_id: str):
     """
     Procesa el pago de un carrito.
+    - Verifica inactividad (elimina si pasó 1 minuto).
     - Verifica y resta el stock de los productos.
     - Elimina el carrito.
     - Devuelve un número de seguimiento.
@@ -147,6 +159,10 @@ def pagar_carrito(carrito_id: str):
     carrito = encontrar_carrito(carrito_id)
     if not carrito:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Carrito no encontrado")
+
+    if carrito_inactivo(carrito, carrito["actualizado_en"].minute):
+        carritos_db.remove(carrito)
+        raise HTTPException(status_code=400, detail="El carrito fue eliminado por inactividad")
 
     if not carrito["items"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El carrito está vacío")
@@ -165,6 +181,9 @@ def pagar_carrito(carrito_id: str):
         # Esta doble verificación es redundante si la lista no cambia, pero es segura
         if producto_db:
             producto_db["stock"] -= item_carrito["cantidad"]
+        
+    # Ultima hora de modificacion antes de eliminarse
+    carrito["actualizado_en"] = timestamp_utc()
 
     # 3. Eliminar el carrito
     carritos_db.remove(carrito)

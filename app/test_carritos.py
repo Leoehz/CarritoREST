@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
 from app.main import app
 from app.db.database import carritos_db
+from app.db.database import productos_db
+from app.utils import carrito_inactivo, timestamp_utc, timedelta
 
 client = TestClient(app)
 
@@ -38,7 +40,6 @@ def test_crear_otro_carrito_tras_eliminar_o_pagar():
     assert carrito1["id"] != carrito2["id"]
 
     # Pagar el segundo carrito
-    from app.db.database import productos_db
     productos_db.clear()
     productos_db.append({"id": 1, "nombre": "TestProd", "precio": 10.0, "stock": 5})
     patch_response = client.patch(f"/carritos/{carrito2['id']}", json=[{"producto_id": 1, "cantidad": 2}])
@@ -78,7 +79,6 @@ def test_eliminar_carrito():
 
 #PATCH
 def test_agregar_productos_al_carrito():
-    from app.db.database import productos_db
     productos_db.clear()
     productos_db.append({"id": 100, "nombre": "ProdPatch1", "precio": 10.0, "stock": 20})
     productos_db.append({"id": 200, "nombre": "ProdPatch2", "precio": 15.0, "stock": 30})
@@ -114,7 +114,6 @@ def test_agregar_productos_al_carrito():
     assert cantidades[200] == 1
 
 def test_no_se_puede_superar_limite_15_items():
-    from app.db.database import productos_db
     productos_db.clear()
     productos_db.append({"id": 101, "nombre": "ProdA", "precio": 10.0, "stock": 100})
     productos_db.append({"id": 102, "nombre": "ProdB", "precio": 20.0, "stock": 100})
@@ -138,7 +137,6 @@ def test_no_se_puede_superar_limite_15_items():
 #PAGO
 def test_stock_decrementa_correctamente_tras_pago():
     # Setup: producto con stock 10
-    from app.db.database import productos_db
     productos_db.clear()
     productos_db.append({"id": 2, "nombre": "ProdStock", "precio": 20.0, "stock": 10})
 
@@ -158,7 +156,6 @@ def test_stock_decrementa_correctamente_tras_pago():
 #PUT
 def test_sobreescribir_items_carrito():
     # Setup: crear producto y carrito
-    from app.db.database import productos_db
     productos_db.clear()
     productos_db.append({"id": 10, "nombre": "Prod1", "precio": 5.0, "stock": 100})
     productos_db.append({"id": 20, "nombre": "Prod2", "precio": 15.0, "stock": 50})
@@ -181,7 +178,6 @@ def test_sobreescribir_items_carrito():
     assert items[0]["cantidad"] == 3
 
 def test_sobreescribir_items_con_mas_unidades_que_stock():
-    from app.db.database import productos_db
     productos_db.clear()
     productos_db.append({"id": 30, "nombre": "ProdStockPUT", "precio": 50.0, "stock": 4})
 
@@ -194,3 +190,26 @@ def test_sobreescribir_items_con_mas_unidades_que_stock():
     put_response = client.put(f"/carritos/{carrito_id}", json=[{"producto_id": 30, "cantidad": 6}])
     assert put_response.status_code == 409
     assert "stock" in put_response.json()["detail"].lower() or "Stock" in put_response.json()["detail"]
+
+# INACTIVIDAD
+def test_carrito_no_expirado():
+    carrito = {
+        "id": "carrito1",
+        "user_id": "usuario1",
+        "items": [],
+        "creado_en": timestamp_utc(),
+        "actualizado_en": timestamp_utc() - timedelta(minutes=0, seconds=30)
+    }
+
+    assert not carrito_inactivo(carrito, limite_minutos=1)
+
+def test_carrito_expirado():
+    carrito = {
+        "id": "carrito2",
+        "user_id": "usuario2",
+        "items": [],
+        "creado_en": timestamp_utc(),
+        "actualizado_en": timestamp_utc() - timedelta(minutes=1, seconds=5)
+    }
+    # Inactividad de 1 minuto
+    assert carrito_inactivo(carrito, limite_minutos=1)

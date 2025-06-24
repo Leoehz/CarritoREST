@@ -1,6 +1,7 @@
-from pydantic import BaseModel
-from typing import List, Optional
+from pydantic import BaseModel, Field
+from typing import List
 from .producto import ProductoEnCarrito
+from datetime import datetime, timezone
 
 # Modelo para la creación de un carrito (solo necesita el user_id)
 class CarritoCreate(BaseModel):
@@ -16,3 +17,5 @@ class Carrito(BaseModel):
     id: str
     user_id: str
     items: List[ProductoEnCarrito] = []
+    creado_en: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    actualizado_en: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
