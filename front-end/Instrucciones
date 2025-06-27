@@ -1,0 +1,6 @@
+# Install dependencies
+cd front-end
+npm install
+
+# Run development server
+npm run dev
