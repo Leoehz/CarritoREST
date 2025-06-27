@@ -55,9 +55,9 @@ def get_carrito(carrito_id: str):
     if not carrito:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Carrito no encontrado")
     
-    if carrito_inactivo(carrito, carrito["actualizado_en"].minute):
+    if carrito_inactivo(carrito):
         carritos_db.remove(carrito)
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Carrito eliminado por inactividad")
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="El carrito fue eliminado por inactividad.")
     
     return carrito
 
@@ -105,6 +105,10 @@ def agregar_productos_al_carrito(carrito_id: str, items_a_agregar: List[ItemCarr
     carrito = encontrar_carrito(carrito_id)
     if not carrito:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Carrito no encontrado")
+
+    if carrito_inactivo(carrito):
+        carritos_db.remove(carrito)
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="El carrito fue eliminado por inactividad.")
 
     # Validar existencia de productos
     for item_nuevo in items_a_agregar:
@@ -160,9 +164,9 @@ def pagar_carrito(carrito_id: str):
     if not carrito:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Carrito no encontrado")
 
-    if carrito_inactivo(carrito, carrito["actualizado_en"].minute):
+    if carrito_inactivo(carrito):
         carritos_db.remove(carrito)
-        raise HTTPException(status_code=400, detail="El carrito fue eliminado por inactividad")
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="El carrito fue eliminado por inactividad.")
 
     if not carrito["items"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El carrito está vacío")

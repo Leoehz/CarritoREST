@@ -6,7 +6,7 @@ def timestamp_utc():
     return datetime.now(timezone.utc)
 
 # Funcion para saber si un carrito estuvo inactivo por mas de 3 minutos
-def carrito_inactivo(carrito, limite_minutos=3):
+def carrito_inactivo(carrito, limite_minutos=1):
     hora_actual = timestamp_utc()
     duracion_inactividad = hora_actual - carrito["actualizado_en"]
     return duracion_inactividad.total_seconds() > limite_minutos * 60
